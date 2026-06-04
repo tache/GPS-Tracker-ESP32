@@ -20,7 +20,7 @@ class LGFX : public lgfx::LGFX_Device {
             auto c = bus_.config();
             c.spi_host    = SPI2_HOST;
             c.spi_mode    = 0;
-            c.freq_write  = 40000000;
+            c.freq_write  = 40000000;  // 40 MHz
             c.pin_sclk    = pins::kDisplaySclk;
             c.pin_mosi    = pins::kDisplayMosi;
             c.pin_miso    = -1;
