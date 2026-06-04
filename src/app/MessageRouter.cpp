@@ -2,11 +2,12 @@
 #include "app/MessageRouter.h"
 #include "model/SkyMessage.h"
 #include "model/TpvMessage.h"
+#include <string_view>
 
-static bool endsWith(const std::string& s, const char* suffix) {
-    const std::string suf(suffix);
-    return s.size() >= suf.size() &&
-           s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
+// std::string::ends_with is C++20; we target C++17, so use string_view comparison.
+static bool endsWith(const std::string& s, std::string_view suffix) {
+    return s.size() >= suffix.size() &&
+           std::string_view(s).substr(s.size() - suffix.size()) == suffix;
 }
 
 void MessageRouter::route(const std::string& topic,
