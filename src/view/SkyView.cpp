@@ -7,9 +7,12 @@
 
 namespace {
 
+// Display is 240×240; centre is (120,120).
+// kR = 0.45*240 = 108 — leaves ~12 px margin so the 12-px-offset cardinal labels don't clip.
+// kBg/kRing are dark greys chosen to be visible but non-distracting on the GC9A01A panel.
 constexpr float    kCx   = 120.0f;
 constexpr float    kCy   = 120.0f;
-constexpr float    kR    = 108.0f;   // 0.45 * 240
+constexpr float    kR    = 108.0f;
 constexpr int      kDot  = 6;
 constexpr uint16_t kBg   = 0x10A2;  // dark grey disc background
 constexpr uint16_t kRing = 0x4208;  // elevation ring grey
@@ -75,13 +78,13 @@ void SkyView::render(LovyanGFX& gfx, const SatelliteStore& store) {
 
     // Satellite dots: filled = used, hollow = unused, + PRN label.
     gfx.setTextDatum(textdatum_t::middle_left);
+    gfx.setTextColor(kText);
     for (const auto& s : store.satellites()) {
         auto p   = projection::polarPoint(s.elevation, s.azimuth, kCx, kCy, kR);
         uint16_t col = snrcolor::toRgb565(snrcolor::classify(s.used, s.snr));
         if (s.used) gfx.fillCircle((int)p.x, (int)p.y, kDot, col);
         else        gfx.drawCircle((int)p.x, (int)p.y, kDot, col);
-        gfx.setTextColor(kText);
-        char label[8];
+        char label[8];  // PRN fits in 3 chars; 8 is safe headroom
         snprintf(label, sizeof(label), "%d", s.prn);
         gfx.drawString(label, (int)p.x + kDot + 4, (int)p.y);
     }
