@@ -13,7 +13,7 @@ void test_extracts_fix_3d() {
 
 void test_extracts_fix_2d() {
     std::string fix;
-    parseTpv(R"({"fix":"2D Fix"})", fix);
+    TEST_ASSERT_TRUE(parseTpv(R"({"fix":"2D Fix"})", fix));
     TEST_ASSERT_EQUAL_STRING("2D Fix", fix.c_str());
 }
 
