@@ -1,3 +1,4 @@
+// Claude Generated: version 1 - Unity tests for polarPoint projection
 #include <unity.h>
 #include "view/Projection.h"
 
