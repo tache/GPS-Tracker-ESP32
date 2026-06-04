@@ -53,3 +53,12 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Git worktrees (isolated dev workspaces)
+.worktrees/
+
+# Build-time credentials (never commit)
+src/secrets.h
+
+# PlatformIO build output
+.pio/
