@@ -1,4 +1,5 @@
 // Claude Generated: version 1 - MessageRouter implementation
+// Claude Generated: version 2 - Pass GPS Zulu time through to store alongside fix
 #include "app/MessageRouter.h"
 #include "model/SkyMessage.h"
 #include "model/TpvMessage.h"
@@ -17,8 +18,8 @@ void MessageRouter::route(const std::string& topic,
         SkyData d;
         if (parseSky(payload.c_str(), d)) store_.updateSky(d, nowSec);
     } else if (endsWith(topic, "/tpv")) {
-        std::string fix;
-        if (parseTpv(payload.c_str(), fix)) store_.updateFix(fix);
+        std::string fix, time;
+        if (parseTpv(payload.c_str(), fix, time)) store_.updateFix(fix, time);
     } else if (endsWith(topic, "/availability")) {
         store_.setOnline(payload == "online");
     }

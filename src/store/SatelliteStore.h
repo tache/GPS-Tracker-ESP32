@@ -1,4 +1,5 @@
 // Claude Generated: version 1 - Central in-memory state for live satellites and trail history
+// Claude Generated: version 2 - Add GPS Zulu time string from TPV messages
 #pragma once
 #include <string>
 #include <vector>
@@ -13,13 +14,17 @@ class SatelliteStore {
     // Updates live satellite array and (throttled) trail history.
     // nowSec is seconds since boot — passed explicitly for deterministic testing.
     void updateSky(const SkyData& d, uint32_t nowSec);
-    void updateFix(const std::string& fix) { fix_ = fix; }
-    void setOnline(bool on)                { online_ = on; }
+    void updateFix(const std::string& fix, const std::string& time) {
+        fix_  = fix;
+        time_ = time;
+    }
+    void setOnline(bool on) { online_ = on; }
 
     const std::vector<Satellite>& satellites() const { return satellites_; }
     int  satUsed()    const { return satUsed_; }
     int  satVisible() const { return satVisible_; }
     const std::string& fix()    const { return fix_; }
+    const std::string& time()   const { return time_; }
     bool online()               const { return online_; }
     const TrailBuffer& trail()  const { return trail_; }
 
@@ -28,6 +33,7 @@ class SatelliteStore {
     int satUsed_    = 0;
     int satVisible_ = 0;
     std::string fix_  = "--";
+    std::string time_ = "--:--:--";
     bool online_      = false;
     TrailBuffer trail_;
     uint32_t lastTrailWriteSec_ = 0;

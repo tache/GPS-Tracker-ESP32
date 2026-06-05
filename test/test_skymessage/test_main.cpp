@@ -1,4 +1,5 @@
 // Claude Generated: version 1 - Unity tests for sky message JSON parsing
+// Claude Generated: version 2 - Add float-payload test matching real GPSD output
 #include <unity.h>
 #include "model/SkyMessage.h"
 
@@ -42,6 +43,22 @@ void test_parses_unused_satellite() {
     TEST_ASSERT_EQUAL_INT(29, out.satellites[1].prn);
 }
 
+// Real GPSD output sends el/az/ss as JSON floats (e.g. "el":64.0).
+// This test guards against the | 0 (int) regression where float variants returned 0.
+static const char* kSkyFloat = R"({
+  "sat_used": 1, "sat_visible": 1,
+  "satellites": [
+    {"prn":31,"el":64.0,"az":34.0,"ss":39.0,"used":true,"seen":15364,"gnssid":0,"svid":31}
+  ]})";
+
+void test_parses_float_fields() {
+    SkyData out;
+    TEST_ASSERT_TRUE(parseSky(kSkyFloat, out));
+    TEST_ASSERT_EQUAL_INT(64, out.satellites[0].elevation);
+    TEST_ASSERT_EQUAL_INT(34, out.satellites[0].azimuth);
+    TEST_ASSERT_EQUAL_INT(39, out.satellites[0].snr);
+}
+
 void test_rejects_garbage() {
     SkyData out;
     TEST_ASSERT_FALSE(parseSky("not json", out));
@@ -58,6 +75,7 @@ int main(int, char**) {
     RUN_TEST(test_parses_satellite_count);
     RUN_TEST(test_parses_first_satellite);
     RUN_TEST(test_parses_unused_satellite);
+    RUN_TEST(test_parses_float_fields);
     RUN_TEST(test_rejects_garbage);
     RUN_TEST(test_rejects_empty_string);
     return UNITY_END();

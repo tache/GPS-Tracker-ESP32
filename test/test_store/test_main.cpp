@@ -49,7 +49,7 @@ void test_trail_written_after_interval() {
 
 void test_fix_and_online_state() {
     SatelliteStore s;
-    s.updateFix("3D Fix");
+    s.updateFix("3D Fix", "18:32:10");
     s.setOnline(true);
     TEST_ASSERT_EQUAL_STRING("3D Fix", s.fix().c_str());
     TEST_ASSERT_TRUE(s.online());

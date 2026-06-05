@@ -1,4 +1,5 @@
 // Claude Generated: version 1 - SkyView render implementation (port of PolarGraphView.swift)
+// Claude Generated: version 2 - Sprite double-buffering to eliminate per-frame flicker
 #include "view/SkyView.h"
 #include "view/Projection.h"
 #include "view/SnrColor.h"
@@ -14,9 +15,10 @@ constexpr float    kCx   = 120.0f;
 constexpr float    kCy   = 120.0f;
 constexpr float    kR    = 108.0f;
 constexpr int      kDot  = 6;
-constexpr uint16_t kBg   = 0x10A2;  // dark grey disc background
-constexpr uint16_t kRing = 0x4208;  // elevation ring grey
-constexpr uint16_t kText = 0xC618;  // label light grey
+constexpr uint16_t kBg        = 0x10A2;  // dark grey disc background
+constexpr uint16_t kRing      = 0x4208;  // major elevation ring grey (0°/30°/60°)
+constexpr uint16_t kRingMinor = 0x2104;  // minor elevation ring grey (15°/45°/75°) — dimmer
+constexpr uint16_t kText      = 0xC618;  // label light grey
 
 // Blends RGB565 color toward background by (1-opacity) for trail fade.
 uint16_t fadeColor(uint16_t c, float opacity) {
@@ -33,31 +35,49 @@ uint16_t fadeColor(uint16_t c, float opacity) {
 
 }  // namespace
 
+void SkyView::begin(LovyanGFX& gfx) {
+    // 8-bit color depth: 240×240 × 1 byte = 57,600 bytes — fits after WiFi/TLS heap usage.
+    // Colors are converted to RGB332 in the sprite and dithered back to RGB565 on pushSprite.
+    // Our palette (grey rings, green/orange/yellow/red dots) survives 8-bit quantization well.
+    sprite_.setColorDepth(8);
+    ready_ = sprite_.createSprite(240, 240);
+}
+
 void SkyView::render(LovyanGFX& gfx, const SatelliteStore& store) {
-    gfx.startWrite();
+    // Fall back to direct draw if sprite allocation failed — avoids black screen.
+    LovyanGFX* canvas = ready_ ? (LovyanGFX*)&sprite_ : &gfx;
+    if (!ready_) gfx.startWrite();
 
-    // Black frame then dark disc.
-    gfx.fillScreen(0x0000);
-    gfx.fillCircle((int)kCx, (int)kCy, (int)kR, kBg);
+    auto& s = *canvas;  // draw target alias
 
-    // Elevation rings at 0° (rim), 30°, 60°.
+    // Clear the full sprite buffer first so satellite dots/labels that bleed outside
+    // the disc rim don't accumulate across frames. Safe with a sprite — the display
+    // only sees the completed frame via pushSprite(), not intermediate draw calls.
+    s.fillScreen(0x0000);
+    s.fillCircle((int)kCx, (int)kCy, (int)kR, kBg);
+
+    // Minor rings at 15°/45°/75° drawn first (dimmer); major rings at 0°/30°/60° on top.
+    for (int el : {15, 45, 75}) {
+        float d = (1.0f - el / 90.0f) * kR;
+        s.drawCircle((int)kCx, (int)kCy, (int)d, kRingMinor);
+    }
     for (int el : {0, 30, 60}) {
         float d = (1.0f - el / 90.0f) * kR;
-        gfx.drawCircle((int)kCx, (int)kCy, (int)d, kRing);
+        s.drawCircle((int)kCx, (int)kCy, (int)d, kRing);
     }
 
-    // Cardinal labels offset 12 px outside the rim.
-    gfx.setTextColor(kText);
-    gfx.setTextDatum(textdatum_t::middle_center);
+    // Cardinal labels inside the rim — placing them outside would clip on the round panel.
+    s.setTextColor(kText);
+    s.setTextDatum(textdatum_t::middle_center);
     const struct { const char* l; int az; } card[] = {
         {"N", 0}, {"E", 90}, {"S", 180}, {"W", 270}
     };
     for (auto& c : card) {
-        auto p = projection::polarPoint(0, c.az, kCx, kCy, kR + 12.0f);
-        gfx.drawString(c.l, (int)p.x, (int)p.y);
+        auto p = projection::polarPoint(0, c.az, kCx, kCy, kR + 4.0f);
+        s.drawString(c.l, (int)p.x, (int)p.y);
     }
 
-    // Trails: SNR-colored segments, visible PRNs only, per-segment time fade.
+    // Trails: light grey segments, visible PRNs only, per-segment time fade.
     const auto& trail = store.trail();
     for (int prn : trail.prns()) {
         const auto& pts = trail.samples(prn);
@@ -70,33 +90,42 @@ void SkyView::render(LovyanGFX& gfx, const SatelliteStore& store) {
             auto pb = projection::polarPoint(b.elevation, b.azimuth, kCx, kCy, kR);
             float age     = (float)(newest - b.tsSec);
             float opacity = std::max(0.2f, 1.0f - age / (float)SatelliteStore::kTrailWindowSec);
-            uint16_t col  = fadeColor(
-                snrcolor::toRgb565(snrcolor::classify(b.used, b.snr)), opacity);
-            gfx.drawLine((int)pa.x, (int)pa.y, (int)pb.x, (int)pb.y, col);
+            uint16_t col  = fadeColor(kText, opacity);
+            s.drawLine((int)pa.x, (int)pa.y, (int)pb.x, (int)pb.y, col);
         }
     }
 
     // Satellite dots: filled = used, hollow = unused, + PRN label.
-    gfx.setTextDatum(textdatum_t::middle_left);
-    gfx.setTextColor(kText);
-    for (const auto& s : store.satellites()) {
-        auto p   = projection::polarPoint(s.elevation, s.azimuth, kCx, kCy, kR);
-        uint16_t col = snrcolor::toRgb565(snrcolor::classify(s.used, s.snr));
-        if (s.used) gfx.fillCircle((int)p.x, (int)p.y, kDot, col);
-        else        gfx.drawCircle((int)p.x, (int)p.y, kDot, col);
+    // Label is placed toward the centre from the dot so it never clips the round bezel.
+    s.setTextColor(kText);
+    for (const auto& sat : store.satellites()) {
+        auto p   = projection::polarPoint(sat.elevation, sat.azimuth, kCx, kCy, kR);
+        uint16_t col = snrcolor::toRgb565(snrcolor::classify(sat.used, sat.snr));
+        if (sat.used) s.fillCircle((int)p.x, (int)p.y, kDot, col);
+        else          s.drawCircle((int)p.x, (int)p.y, kDot, col);
         char label[8];  // PRN fits in 3 chars; 8 is safe headroom
-        snprintf(label, sizeof(label), "%d", s.prn);
-        gfx.drawString(label, (int)p.x + kDot + 4, (int)p.y);
+        snprintf(label, sizeof(label), "%d", sat.prn);
+        // Draw label on the inward-facing side of the dot so it stays inside the bezel.
+        if (p.x >= kCx) {
+            s.setTextDatum(textdatum_t::middle_right);
+            s.drawString(label, (int)p.x - kDot - 2, (int)p.y);
+        } else {
+            s.setTextDatum(textdatum_t::middle_left);
+            s.drawString(label, (int)p.x + kDot + 4, (int)p.y);
+        }
     }
 
-    // Status readout: sat counts + fix string near the bottom of the disc.
-    gfx.setTextDatum(textdatum_t::middle_center);
-    gfx.setTextColor(kText);
+    // Status readout: Zulu time top, sat counts + fix bottom — symmetric offsets from centre.
+    s.setTextDatum(textdatum_t::middle_center);
+    s.setTextColor(kText);
+    s.drawString(store.time().c_str(), (int)kCx, (int)(kCy - 58));
     char line[32];
     snprintf(line, sizeof(line), "%d used / %d vis",
              store.satUsed(), store.satVisible());
-    gfx.drawString(line, (int)kCx, (int)(kCy + 58));
-    gfx.drawString(store.fix().c_str(), (int)kCx, (int)(kCy + 72));
+    s.drawString(line, (int)kCx, (int)(kCy + 58));
+    s.drawString(store.fix().c_str(), (int)kCx, (int)(kCy + 72));
 
-    gfx.endWrite();
+    // Push completed frame to display — or close direct-draw transaction if in fallback mode.
+    if (ready_) sprite_.pushSprite(&gfx, 0, 0);
+    else        gfx.endWrite();
 }
