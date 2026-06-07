@@ -8,11 +8,22 @@ Inspired by [ESP32-Plane-Radar](https://github.com/MatixYo/ESP32-Plane-Radar) �
 
 - Horizon-to-zenith polar projection — centre = zenith (90°), rim = horizon (0°)
 - North up, compass labels N / E / S / W
-- Elevation reference rings at 30° and 60°
+- Green elevation rings: major (0° / 30° / 60°) and minor (15° / 45° / 75°)
 - Satellite dots: **filled = used in fix**, hollow = not used
 - SNR color coding: 🟢 ≥35 dBHz · 🟠 ≥20 dBHz · 🟡 <20 dBHz · 🔴 unused
-- Satellite trails accumulate over 15 minutes (60-second snapshot cadence)
 - Live readout: GPS Zulu time · satellite counts · fix status
+- Render rate: 1 Hz in GPS mode, 20 Hz during Easter egg animation
+
+## Easter Egg
+
+Roughly once a minute, the display switches into an Asteroids arcade mode:
+
+1. GPS rings and labels fade out; satellite dots become spinning asteroid polygons (ROM-faithful shapes, randomised spin rate and direction per satellite)
+2. "ASTEROIDS" title and "© 1979 ATARI INC" appear in vector font and fade over 5 seconds
+3. A vector ship enters from the rim, steers around asteroids under time-based physics, and exits off-screen — or collides and explodes with ROM-accurate debris pieces
+4. "GAME OVER" flashes at 1 Hz for 3 seconds after a collision, then GPS mode resumes
+
+Ship behaviour mirrors real Asteroids: thruster fires only while actively steering; ship glides silently when on course.
 
 ## Hardware
 
@@ -75,7 +86,7 @@ pio device monitor --port /dev/cu.usbmodemXXXX -b 115200
 pio test -e native
 ```
 
-Tests cover: polar projection math · SNR color classification · sky/tpv JSON parsing · trail ring buffer · satellite store · end-to-end mock-MQTT integration.
+Tests cover: polar projection math · SNR color classification · sky/tpv JSON parsing · satellite store · ship steering math · end-to-end mock-MQTT integration.
 
 ### Build firmware only
 
@@ -91,25 +102,32 @@ pio run -e esp32-c3 -t clean
 
 ## Architecture
 
-The pure-logic core (model, store, app layers) is Arduino-free and fully unit-tested under the PlatformIO `native` environment. The Arduino shell (WiFi, MQTT, display) wraps it.
+The pure-logic core (model, store, app, and steering-math layers) is Arduino-free and fully unit-tested under the PlatformIO `native` environment. The Arduino shell (WiFi, MQTT, display) wraps it.
 
 ```
 src/
-  config/       GPIO pin constants
-  model/        Satellite structs, sky/tpv JSON parsers
-  store/        SatelliteStore, TrailBuffer
-  app/          MessageRouter (MQTT topic → parser → store)
-  net/          WiFiLink, MqttClient (TLS)
-  view/         Projection math, SNR color, SkyView renderer
-  main.cpp      Display init, wiring, 1 Hz render loop
+  config/         GPIO pin constants
+  model/          Satellite structs, sky/tpv JSON parsers
+  store/          SatelliteStore
+  app/            MessageRouter (MQTT topic → parser → store)
+  net/            WiFiLink, MqttClient (TLS)
+  view/
+    Projection.h        Polar-to-screen coordinate math
+    SnrColor.h          SNR → RGB565 color classification
+    AsteroidShape.h     ROM-derived asteroid polygon shapes
+    VectorFont.h        Minimal vector font (Asteroids ROM stroke style)
+    ShipSteering.h      Pure-C++ ship physics and steering math (testable, no LovyanGFX)
+    ShipEasterEgg.h/cpp Easter egg: timer, state machine, LovyanGFX drawing
+    SkyView.h/cpp       Double-buffered sprite renderer; wires all view components
+  main.cpp        Display init, WiFi/MQTT wiring, dynamic render loop (1 Hz / 20 Hz)
 test/
   test_projection/
   test_snrcolor/
   test_skymessage/
   test_tpvmessage/
-  test_trailbuffer/
   test_store/
-  test_integration/   mock-MQTT end-to-end data path
+  test_ship/            Ship steering math (18 Unity tests)
+  test_integration/     Mock-MQTT end-to-end data path
 ```
 
 ## MQTT Topics

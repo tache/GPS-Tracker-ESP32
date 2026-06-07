@@ -1,4 +1,5 @@
 // Claude Generated: version 1 - Main entry point: display init, module wiring, setup/loop
+// Claude Generated: version 2 - Dynamic render rate: 20 Hz during Easter egg, 1 Hz for GPS
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
 #include "config/Pins.h"
@@ -101,8 +102,9 @@ void loop() {
         }
         lastStatusMs = millis();
     }
-    // Redraw at ~1 Hz — matches the ~1 Hz GPSD sky message rate.
-    if (millis() - lastRenderMs >= 1000) {
+    // GPS mode: 1 Hz matches NMEA update rate. Easter egg mode: 20 Hz for smooth animation.
+    uint32_t renderIntervalMs = view.isAnimating() ? 50u : 1000u;
+    if (millis() - lastRenderMs >= renderIntervalMs) {
         view.render(gfx, store);
         lastRenderMs = millis();
     }
